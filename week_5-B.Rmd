@@ -113,9 +113,31 @@ simulate_election <- function(n_times) {
 
 Call the `simulate_election` function to simulate 100 elections and assign the result to an object named `draws`. Print that object out in the console and look at it. How is it formatted? It will have 100 rows and 51 columns. Figure out a way to reformat the dataset so that it has a "state" and a "trump_share" column with only one numerical value printed out per row. That is, instead of this format with 51 columns and so 51 numerical values per row, create a dataset that will have 2 columns and only one numerical value per row. This is convenient because `ggplot` prefers working with data formatted this way (think about it, how would you plot 51 columns on a `ggplot`? Much easier to use a `state` column!). 
 
+```{r sc1a}
+draws <- simulate_election(n_times = 100) %>% 
+  pivot_longer(cols = Alabama:Wyoming, names_to = "state", 
+               values_to = "trump_share")
+
+```
+
+
 Finally, use `geom_density` to plot the distributions of two states of your choice. Make this plot beautiful!
 
 **You should do this in steps. First, create the `draws` object. Second, try to successfully change the format of the dataset. Don't do everything all at once in one long section with many pipes!!**
+
+```{r sc1b}
+draws %>% 
+  filter(state %in% c("Ohio", "Wisconsin")) %>% 
+  ggplot(aes(x = trump_share, fill = state)) +
+    geom_density() +
+    facet_wrap(~ state) +
+    theme_bw() +
+    scale_fill_manual(values = c("dodgerblue", "indianred")) +
+    labs(title = "Estimated Trump Vote Share in Two States", 
+         x = "Modeled Trump Share", y = "Density")
+```
+
+
 
 
   
@@ -123,11 +145,35 @@ Finally, use `geom_density` to plot the distributions of two states of your choi
 
 In Scene 1, we called this election simulation function a single time. Now, create a new `tibble` called `elections` with one column, `simulations`, that simulates one election in each of 1000 rows. Finally, use this `elections` object to create a column called `pa_win` that uses a `map` function to figure out whether Trump wins Pennsylvania in each of these simulated elections. Once you've verified that works, take the average of the `pa_win` column to see how likely Trump is to win Pennsylvania across all of these simulations.
 
+```{r sc2}
+elections <- tibble(simulations = map(rep(1, 1000), simulate_election))
+
+elections %>% 
+  mutate(pa_win = map_lgl(simulations, ~ .$Pennsylvania > 50)) %>% 
+  summarize(pa_avg = mean(pa_win))
+
+```
+
+
 
 
 ## Scene 3: Do it again!
 
 First, repeat Scene 2 to make a column called `oh_win` that uses a `map` function to figure out whether Trump wins Pennsylvania in each of these simulated elections. Then, create a column `called` both that is TRUE if Trump wins both PA and OH and FALSE otherwise.
+
+```{r}
+elections <- tibble(simulations = map(rep(1, 1000), simulate_election))
+
+elections %>% 
+  mutate(pa_win = map_lgl(simulations, ~ .$Pennsylvania > 50)) %>% 
+  mutate(oh_win = map_lgl(simulations, ~ .$Ohio > 50)) %>% 
+  mutate(both = ifelse(pa_win & oh_win, TRUE, FALSE)) %>% 
+  summarize(pa_avg = mean(pa_win), oh_avg = mean(oh_win), 
+            both_avg = mean(both)) 
+
+
+```
+
 
 Once that is all done, summarise your dataset to estimate the probabilities of (1) winning PA, (2) winning OH, and (3) winning both.
 
@@ -139,6 +185,15 @@ In Scene 4, we estimated the probabilities of winning two states. However, notic
 
 The Economist says that results in PA and OH are likely to be highly correlated - around 0.7. Let's investigate this using conditional probabilities. Using your elections object from Scene 2, again create two columns called `oh_win` and `pa_win` that map to TRUE and FALSE if Trump wins each state. Then, calculate the probability of winning PA in two scenarios - when Trump wins OH, and when he doesn't. That is, (1) what percentage of the time does Trump win PA if he loses OH, and (2) what percentage of the time does Trump win PA if he wins OH?
 
+```{r}
+elections %>% 
+  mutate(pa_win = map_lgl(simulations, ~ .$Pennsylvania > 50)) %>% 
+  mutate(oh_win = map_lgl(simulations, ~ .$Ohio > 50)) %>%
+  group_by(oh_win) %>% 
+  summarize(pa_win_avg = mean(pa_win), .groups = "drop")
+
+```
+
 
 
 ## Scene 5
@@ -146,6 +201,23 @@ The Economist says that results in PA and OH are likely to be highly correlated 
 Our simulation only includes the predicted popular vote results. Let's simulate 1000 elections, reformat the dataset, and join information about the number of electoral votes to generate predictions about the Electoral College outcome.
 
 1. First, create a new dataset called `elections_100` that uses `map` to call `simulate_election` with n=1 100 times in a column called `simulations`. Print out `elections_100`. You'll see a list-column where each row is a 1 x 51 dataset.
+
+```{r}
+elections_100 <- tibble(simulations = map(rep(1, 100), simulate_election))
+
+elections_100 %>%
+  mutate(df_pivoted = map(simulations,
+                          ~ pivot_longer(., 
+                                         cols = everything(),
+                                         names_to = "state",
+                                         values_to = "trump_share"))) %>%
+  mutate(df_joined = map(df_pivoted, ~ left_join(., states, by = "state"))) %>%
+  mutate(ev_result = map_dbl(df_joined, 
+                             ~ sum(filter(., trump_share > 50)$electoral_votes)))
+
+
+```
+
 
 2. Just like any other dataset, we can use functions like pivot and join on these list-column entries. They're just `tibbles`! The only thing that has changed is that now a separate tibble contains other tibbles inside of a list-column. Second, use `map` to pivot each of those simulations into a longer format. Save these pivoted datasets into a new list-column called `df_pivoted`. Don't forget you will need the `~` and `.` syntax.
 
